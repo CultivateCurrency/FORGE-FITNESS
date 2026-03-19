@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendStreamNotificationEmail } from "@/lib/email";
+import { deleteIvsChannel, stopIvsStream, getIvsStream } from "@/lib/ivs";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-// GET /api/streaming/[id] — Get a single stream
+// GET /api/streaming/[id] — Get a single stream (with live viewer count from IVS)
 export async function GET(req: NextRequest, context: RouteContext) {
   try {
     const tenantId = req.headers.get("x-tenant-id") || "default-tenant";
+    const userId = req.headers.get("x-user-id");
     const { id } = await context.params;
 
     const stream = await prisma.stream.findFirst({
       where: { id, tenantId },
+      include: { host: { select: { id: true, fullName: true, profilePhoto: true } } },
     });
 
     if (!stream) {
@@ -21,7 +24,36 @@ export async function GET(req: NextRequest, context: RouteContext) {
       );
     }
 
-    return NextResponse.json({ success: true, data: stream });
+    // If stream is LIVE and has a channel, get real-time viewer count from IVS
+    let liveViewerCount = stream.viewerCount;
+    if (stream.status === "LIVE" && stream.channelArn) {
+      try {
+        const ivsStream = await getIvsStream(stream.channelArn);
+        liveViewerCount = ivsStream.viewerCount;
+        // Update stored viewer count
+        if (ivsStream.viewerCount !== stream.viewerCount) {
+          await prisma.stream.update({
+            where: { id },
+            data: { viewerCount: ivsStream.viewerCount },
+          });
+        }
+      } catch (e) {
+        // IVS call failed, use stored count
+      }
+    }
+
+    // Only return stream key to the host
+    const isHost = userId === stream.hostId;
+    const { streamKey, ...rest } = stream;
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...rest,
+        viewerCount: liveViewerCount,
+        ...(isHost ? { streamKey, ingestEndpoint: stream.ingestEndpoint } : {}),
+      },
+    });
   } catch (error) {
     console.error("[GET /api/streaming/[id]]", error);
     return NextResponse.json(
@@ -65,6 +97,25 @@ export async function PUT(req: NextRequest, context: RouteContext) {
     } else if (status === "ENDED" && existing.status === "LIVE") {
       data.status = "ENDED";
       data.endedAt = new Date();
+
+      // Stop the IVS stream
+      if (existing.channelArn) {
+        try {
+          await stopIvsStream(existing.channelArn);
+        } catch (e) {
+          console.error("Failed to stop IVS stream:", e);
+        }
+      }
+
+      // Get final viewer count from IVS before ending
+      if (existing.channelArn) {
+        try {
+          const ivsStream = await getIvsStream(existing.channelArn);
+          data.viewerCount = ivsStream.viewerCount;
+        } catch (e) {
+          // Use existing count
+        }
+      }
     } else if (status !== undefined && status !== existing.status) {
       return NextResponse.json(
         { success: false, error: `Invalid status transition from ${existing.status} to ${status}` },
@@ -79,7 +130,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
     // Notify followers when coach goes live (non-blocking)
     if (status === "LIVE" && existing.status === "SCHEDULED") {
-      const coach = await prisma.user.findUnique({ where: { id: stream.coachId } });
+      const coach = await prisma.user.findUnique({ where: { id: stream.hostId } });
       if (coach) {
         const followers = await prisma.follow.findMany({
           where: { followingId: coach.id },
@@ -105,7 +156,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 }
 
-// DELETE /api/streaming/[id] — Delete a stream
+// DELETE /api/streaming/[id] — Delete a stream (and its IVS channel)
 export async function DELETE(req: NextRequest, context: RouteContext) {
   try {
     const tenantId = req.headers.get("x-tenant-id") || "default-tenant";
@@ -120,6 +171,19 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
         { success: false, error: "Stream not found" },
         { status: 404 }
       );
+    }
+
+    // Delete the IVS channel if it exists
+    if (existing.channelArn) {
+      try {
+        // Stop stream first if live
+        if (existing.status === "LIVE") {
+          await stopIvsStream(existing.channelArn);
+        }
+        await deleteIvsChannel(existing.channelArn);
+      } catch (e) {
+        console.error("Failed to delete IVS channel:", e);
+      }
     }
 
     await prisma.stream.delete({ where: { id } });

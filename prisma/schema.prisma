@@ -597,20 +597,24 @@ enum StreamStatus {
 }
 
 model Stream {
-  id          String       @id @default(cuid())
-  tenantId    String
-  hostId      String
-  title       String
-  category    String?
-  type        StreamType   @default(PUBLIC)
-  status      StreamStatus @default(SCHEDULED)
-  replayUrl   String?
-  scheduledAt DateTime?
-  startedAt   DateTime?
-  endedAt     DateTime?
-  price       Float        @default(0)
-  viewerCount Int          @default(0)
-  createdAt   DateTime     @default(now())
+  id              String       @id @default(cuid())
+  tenantId        String
+  hostId          String
+  title           String
+  category        String?
+  type            StreamType   @default(PUBLIC)
+  status          StreamStatus @default(SCHEDULED)
+  replayUrl       String?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  price           Float        @default(0)
+  viewerCount     Int          @default(0)
+  channelArn      String?
+  streamKey       String?
+  ingestEndpoint  String?
+  playbackUrl     String?
+  createdAt       DateTime     @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   host   User   @relation(fields: [hostId], references: [id], onDelete: Cascade)

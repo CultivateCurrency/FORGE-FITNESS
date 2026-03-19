@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createIvsChannel } from "@/lib/ivs";
 
 // GET /api/streaming — List streams with filters and pagination
 export async function GET(req: NextRequest) {
@@ -23,13 +24,17 @@ export async function GET(req: NextRequest) {
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
+        include: { host: { select: { id: true, fullName: true, profilePhoto: true } } },
       }),
       prisma.stream.count({ where }),
     ]);
 
+    // Strip stream keys from response (security)
+    const sanitized = streams.map(({ streamKey, ...rest }) => rest);
+
     return NextResponse.json({
       success: true,
-      data: { streams, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } },
+      data: { streams: sanitized, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } },
     });
   } catch (error) {
     console.error("[GET /api/streaming]", error);
@@ -40,7 +45,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/streaming — Create / schedule a stream
+// POST /api/streaming — Create / schedule a stream (creates IVS channel)
 export async function POST(req: NextRequest) {
   try {
     const tenantId = req.headers.get("x-tenant-id") || "default-tenant";
@@ -55,6 +60,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Create an IVS channel for this stream
+    let ivsData = { channelArn: "", streamKey: "", ingestEndpoint: "", playbackUrl: "" };
+    try {
+      ivsData = await createIvsChannel(`forge-${title.replace(/\s+/g, "-").toLowerCase()}-${Date.now()}`);
+    } catch (ivsErr) {
+      console.error("[POST /api/streaming] IVS channel creation failed:", ivsErr);
+      // Continue without IVS — stream record is still created
+    }
+
     const stream = await prisma.stream.create({
       data: {
         tenantId,
@@ -65,6 +79,10 @@ export async function POST(req: NextRequest) {
         status: "SCHEDULED",
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         price: price ?? 0,
+        channelArn: ivsData.channelArn || null,
+        streamKey: ivsData.streamKey || null,
+        ingestEndpoint: ivsData.ingestEndpoint || null,
+        playbackUrl: ivsData.playbackUrl || null,
       },
     });
 

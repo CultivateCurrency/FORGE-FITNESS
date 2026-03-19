@@ -1,18 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useApi, useMutation } from "@/hooks/use-api";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-
-const viewerData = [
-  { stream: "Stream 1", viewers: 45 },
-  { stream: "Stream 2", viewers: 82 },
-  { stream: "Stream 3", viewers: 63 },
-  { stream: "Stream 4", viewers: 110 },
-  { stream: "Stream 5", viewers: 95 },
-  { stream: "Stream 6", viewers: 130 },
-];
 import {
   Card,
   CardContent,
@@ -36,6 +27,12 @@ import {
   BarChart3,
   Zap,
   Loader2,
+  Copy,
+  Check,
+  Square,
+  Key,
+  Link2,
+  X,
 } from "lucide-react";
 
 interface Stream {
@@ -51,6 +48,10 @@ interface Stream {
   endedAt: string | null;
   price: number;
   viewerCount: number;
+  channelArn: string | null;
+  streamKey: string | null;
+  ingestEndpoint: string | null;
+  playbackUrl: string | null;
   createdAt: string;
 }
 
@@ -70,6 +71,16 @@ function formatDate(dateStr: string | null): string {
     year: "numeric",
     month: "short",
     day: "numeric",
+  });
+}
+
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
 }
 
@@ -93,6 +104,13 @@ export default function CoachStreamingPage() {
   const [streamPrice, setStreamPrice] = useState("");
   const [isFree, setIsFree] = useState(true);
 
+  // Live stream control state
+  const [activeStream, setActiveStream] = useState<Stream | null>(null);
+  const [showStreamPanel, setShowStreamPanel] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [goingLive, setGoingLive] = useState(false);
+  const [endingStream, setEndingStream] = useState(false);
+
   const pastStreams = useMemo(
     () => (streams ?? []).filter((s) => s.status === "ENDED"),
     [streams]
@@ -109,6 +127,14 @@ export default function CoachStreamingPage() {
   const totalStreams = (streams ?? []).length;
   const totalViewers = (streams ?? []).reduce((sum, s) => sum + s.viewerCount, 0);
   const peakViewers = (streams ?? []).reduce((max, s) => Math.max(max, s.viewerCount), 0);
+
+  // Build chart data from past streams
+  const viewerData = useMemo(() => {
+    return pastStreams.slice(0, 8).reverse().map((s, i) => ({
+      stream: s.title.length > 15 ? s.title.slice(0, 15) + "..." : s.title,
+      viewers: s.viewerCount,
+    }));
+  }, [pastStreams]);
 
   async function handleSchedule() {
     if (!session?.user || !streamTitle || !streamDate || !streamTime) return;
@@ -143,12 +169,71 @@ export default function CoachStreamingPage() {
       price: 0,
     });
     if (result) {
-      alert(
-        `Stream "${result.title}" created (ID: ${result.id}). Going live requires IVS integration — coming soon!`
-      );
+      // Fetch the full stream details (with stream key)
+      const res = await fetch(`/api/streaming/${result.id}`);
+      const data = await res.json();
+      if (data.success) {
+        setActiveStream(data.data);
+        setShowStreamPanel(true);
+      }
       refetch();
     }
   }
+
+  async function handleStartScheduledStream(stream: Stream) {
+    // Fetch stream details with stream key (only available to host)
+    const res = await fetch(`/api/streaming/${stream.id}`);
+    const data = await res.json();
+    if (data.success) {
+      setActiveStream(data.data);
+      setShowStreamPanel(true);
+    }
+  }
+
+  async function handleSetLive() {
+    if (!activeStream) return;
+    setGoingLive(true);
+    try {
+      const res = await fetch(`/api/streaming/${activeStream.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "LIVE" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActiveStream({ ...activeStream, status: "LIVE", startedAt: new Date().toISOString() });
+        refetch();
+      }
+    } finally {
+      setGoingLive(false);
+    }
+  }
+
+  async function handleEndStream() {
+    if (!activeStream) return;
+    setEndingStream(true);
+    try {
+      const res = await fetch(`/api/streaming/${activeStream.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ENDED" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowStreamPanel(false);
+        setActiveStream(null);
+        refetch();
+      }
+    } finally {
+      setEndingStream(false);
+    }
+  }
+
+  const copyToClipboard = useCallback((text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
@@ -172,6 +257,192 @@ export default function CoachStreamingPage() {
           Go Live
         </Button>
       </div>
+
+      {/* Stream Control Panel (shown after Go Live or Start Stream) */}
+      {showStreamPanel && activeStream && (
+        <Card className="bg-zinc-900 border-2 border-red-500/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white flex items-center gap-2">
+                {activeStream.status === "LIVE" ? (
+                  <>
+                    <Radio className="h-5 w-5 text-red-500 animate-pulse" />
+                    <span className="text-red-400">LIVE</span> — {activeStream.title}
+                  </>
+                ) : (
+                  <>
+                    <Key className="h-5 w-5 text-orange-500" />
+                    Stream Ready — {activeStream.title}
+                  </>
+                )}
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setShowStreamPanel(false); setActiveStream(null); }}
+                className="text-zinc-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <CardDescription className="text-zinc-400">
+              {activeStream.status === "LIVE"
+                ? "You are broadcasting live. Use the controls below to manage your stream."
+                : "Use these credentials in OBS Studio or your preferred streaming software to start broadcasting."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Ingest Credentials */}
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-400 flex items-center gap-1">
+                  <Link2 className="h-3 w-3" /> Server URL (Ingest Endpoint)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    value={activeStream.ingestEndpoint ? `rtmps://${activeStream.ingestEndpoint}:443/app/` : "Generating..."}
+                    className="bg-zinc-800 border-zinc-700 text-zinc-200 font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 shrink-0"
+                    onClick={() => copyToClipboard(`rtmps://${activeStream.ingestEndpoint}:443/app/`, "server")}
+                  >
+                    {copiedField === "server" ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-zinc-400 flex items-center gap-1">
+                  <Key className="h-3 w-3" /> Stream Key
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    readOnly
+                    type="password"
+                    value={activeStream.streamKey || "Generating..."}
+                    className="bg-zinc-800 border-zinc-700 text-zinc-200 font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 shrink-0"
+                    onClick={() => activeStream.streamKey && copyToClipboard(activeStream.streamKey, "key")}
+                  >
+                    {copiedField === "key" ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Keep your stream key private. Never share it publicly.
+                </p>
+              </div>
+            </div>
+
+            {/* OBS Setup Instructions */}
+            {activeStream.status !== "LIVE" && (
+              <div className="bg-zinc-800/50 rounded-lg p-4 border border-zinc-700/50 text-sm text-zinc-300 space-y-2">
+                <p className="font-medium text-white">Quick Setup (OBS Studio):</p>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-400">
+                  <li>Open OBS Studio &rarr; Settings &rarr; Stream</li>
+                  <li>Service: <span className="text-zinc-200">Custom</span></li>
+                  <li>Paste the <span className="text-zinc-200">Server URL</span> and <span className="text-zinc-200">Stream Key</span> above</li>
+                  <li>Click &quot;Start Streaming&quot; in OBS</li>
+                  <li>Then click <span className="text-orange-400">&quot;Set Status to Live&quot;</span> below to notify your followers</li>
+                </ol>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 pt-2">
+              {activeStream.status === "SCHEDULED" && (
+                <Button
+                  onClick={handleSetLive}
+                  disabled={goingLive}
+                  className="bg-red-500 hover:bg-red-600 text-white gap-2"
+                >
+                  {goingLive ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Radio className="h-4 w-4" />
+                  )}
+                  Set Status to Live
+                </Button>
+              )}
+              {activeStream.status === "LIVE" && (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-zinc-400">
+                    <Eye className="h-4 w-4" />
+                    <span>{activeStream.viewerCount} viewers</span>
+                  </div>
+                  <div className="flex-1" />
+                  <Button
+                    onClick={handleEndStream}
+                    disabled={endingStream}
+                    variant="outline"
+                    className="border-red-500/50 text-red-400 hover:bg-red-500/10 gap-2"
+                  >
+                    {endingStream ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Square className="h-4 w-4" />
+                    )}
+                    End Stream
+                  </Button>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Currently Live Streams */}
+      {liveStreams.length > 0 && !showStreamPanel && (
+        <Card className="bg-zinc-900 border-red-500/30">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Radio className="h-5 w-5 text-red-500 animate-pulse" />
+              Currently Live
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {liveStreams.map((stream) => (
+                <div
+                  key={stream.id}
+                  className="flex items-center justify-between p-4 bg-red-500/5 rounded-lg border border-red-500/20"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-xl bg-red-500/10">
+                      <Radio className="h-6 w-6 text-red-500 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="font-medium text-white">{stream.title}</h4>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                        <span className="flex items-center gap-1 text-red-400">
+                          <Eye className="h-3 w-3" /> {stream.viewerCount} watching
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> Started {formatDateTime(stream.startedAt)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                    onClick={() => handleStartScheduledStream(stream)}
+                  >
+                    Manage
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Loading / Error */}
       {loading && (
@@ -400,7 +671,7 @@ export default function CoachStreamingPage() {
                           </Badge>
                         )}
                         <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" /> {formatDate(stream.scheduledAt)}
+                          <Calendar className="h-3 w-3" /> {formatDateTime(stream.scheduledAt)}
                         </span>
                         <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px]">
                           Scheduled
@@ -414,6 +685,14 @@ export default function CoachStreamingPage() {
                         ${stream.price}
                       </Badge>
                     )}
+                    <Button
+                      size="sm"
+                      onClick={() => handleStartScheduledStream(stream)}
+                      className="bg-red-500 hover:bg-red-600 text-white gap-1"
+                    >
+                      <Radio className="h-3 w-3" />
+                      Start Stream
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -474,12 +753,12 @@ export default function CoachStreamingPage() {
                         <Eye className="h-3 w-3 text-zinc-500" /> {stream.viewerCount}
                       </p>
                     </div>
-                    {stream.replayUrl ? (
+                    {stream.playbackUrl ? (
                       <Button
                         variant="outline"
                         size="sm"
                         className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-                        onClick={() => window.open(stream.replayUrl!, "_blank")}
+                        onClick={() => window.open(stream.playbackUrl!, "_blank")}
                       >
                         <Play className="h-3 w-3 mr-1" />
                         Replay
@@ -497,7 +776,7 @@ export default function CoachStreamingPage() {
         </CardContent>
       </Card>
 
-      {/* Viewer Analytics Placeholder */}
+      {/* Viewer Analytics */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
@@ -510,14 +789,20 @@ export default function CoachStreamingPage() {
         </CardHeader>
         <CardContent>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={viewerData}>
-                <XAxis dataKey="stream" tick={{ fill: "#71717a", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#71717a", fontSize: 12 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, color: "#fff" }} />
-                <Bar dataKey="viewers" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {viewerData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={viewerData}>
+                  <XAxis dataKey="stream" tick={{ fill: "#71717a", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#71717a", fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 8, color: "#fff" }} />
+                  <Bar dataKey="viewers" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                Stream analytics will appear here after your first broadcast.
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
