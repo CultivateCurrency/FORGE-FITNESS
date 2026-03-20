@@ -102,19 +102,40 @@ export default function SettingsPage() {
   );
 }
 
+interface UserProfile {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  profilePhoto: string | null;
+}
+
 function SettingsContent() {
   const searchParams = useSearchParams();
-  const [fullName, setFullName] = useState("Jordan Hayes");
-  const [username, setUsername] = useState("gymtality_jordan");
-  const [email, setEmail] = useState("jordan@example.com");
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [billingInterval, setBillingInterval] = useState<"MONTHLY" | "YEARLY">("MONTHLY");
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [managingPortal, setManagingPortal] = useState(false);
   const [subSuccess, setSubSuccess] = useState(false);
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const { upload, uploading } = useUpload();
 
+  const { data: userData } = useApi<UserProfile>("/api/users/me");
   const { data: subData } = useApi<SubscriptionData>("/api/admin/subscriptions?mySubscription=true");
+
+  // Populate form with current user data
+  useEffect(() => {
+    if (userData) {
+      setFullName(userData.fullName || "");
+      setUsername(userData.username || "");
+      setEmail(userData.email || "");
+      setProfilePhoto(userData.profilePhoto || null);
+    }
+  }, [userData]);
 
   // Check for success redirect from Stripe
   useEffect(() => {
@@ -276,8 +297,28 @@ function SettingsContent() {
             </Button>
           </div>
 
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-            Save Changes
+          <Button
+            className="bg-orange-500 hover:bg-orange-600 text-white"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setSaveSuccess(false);
+              try {
+                await apiFetch(`/api/users/${userData?.id}`, {
+                  method: "PUT",
+                  body: JSON.stringify({ fullName, username, email, profilePhoto }),
+                });
+                setSaveSuccess(true);
+                setTimeout(() => setSaveSuccess(false), 3000);
+              } catch (e: any) {
+                alert(e.message || "Failed to save");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : saveSuccess ? <Check className="h-4 w-4 mr-2" /> : null}
+            {saveSuccess ? "Saved!" : "Save Changes"}
           </Button>
         </CardContent>
       </Card>

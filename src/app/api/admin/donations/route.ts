@@ -39,12 +39,14 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: donations,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
-      stats: {
-        totalAmount: totalAmount._sum.amount || 0,
-        monthlyAmount: monthlyAmount._sum.amount || 0,
-        totalCount: total,
+      data: {
+        data: donations,
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        stats: {
+          totalAmount: totalAmount._sum.amount || 0,
+          monthlyAmount: monthlyAmount._sum.amount || 0,
+          totalCount: total,
+        },
       },
     })
   } catch (e) {

@@ -25,7 +25,7 @@ import {
   Video,
   Loader2,
 } from "lucide-react";
-import { useApi, useMutation } from "@/hooks/use-api";
+import { useApi, useMutation, apiFetch } from "@/hooks/use-api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -234,9 +234,23 @@ export default function AdminEventsPage() {
     [mappedEvents]
   );
 
+  const [deleting, setDeleting] = useState<string | null>(null);
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
+
+  async function handleDeleteEvent(id: string) {
+    setDeleting(id);
+    try {
+      await apiFetch(`/api/events/${id}`, { method: "DELETE" });
+      refetch();
+    } catch (e) {
+      // silently fail — refetch will show current state
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   async function handleCreateEvent() {
     if (!formTitle || !formDate || !formTime) return;
@@ -693,9 +707,15 @@ export default function AdminEventsPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        disabled={deleting === event.id}
+                        onClick={() => handleDeleteEvent(event.id)}
                         className="border-zinc-700 text-zinc-400 hover:bg-red-500/10 hover:text-red-400"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        {deleting === event.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
                       </Button>
                     </div>
                   </div>

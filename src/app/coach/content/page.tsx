@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useApi, useMutation } from "@/hooks/use-api";
+import { useApi, useMutation, apiFetch } from "@/hooks/use-api";
 import { useUpload } from "@/hooks/use-upload";
 import {
   Card,
@@ -130,6 +130,30 @@ export default function CoachContentPage() {
       repetitions,
     });
     if (result) {
+      // Add exercises to the newly created plan
+      const validExercises = exercises.filter((ex) => ex.name.trim());
+      if (validExercises.length > 0) {
+        try {
+          await apiFetch(`/api/workouts/${result.id}/exercises`, {
+            method: "POST",
+            body: JSON.stringify({
+              exercises: validExercises.map((ex, i) => ({
+                name: ex.name,
+                description: ex.description || undefined,
+                bodyParts: ex.bodyParts,
+                equipment: ex.equipment || undefined,
+                duration: ex.duration ? Number(ex.duration) : undefined,
+                sets: ex.sets ? Number(ex.sets) : undefined,
+                reps: ex.reps ? Number(ex.reps) : undefined,
+                videoUrl: ex.videoUrl || undefined,
+                order: i + 1,
+              })),
+            }),
+          });
+        } catch (err) {
+          console.error("Failed to add exercises:", err);
+        }
+      }
       setPlanName("");
       setPlanDescription("");
       setPlanType("HOME");
@@ -138,6 +162,15 @@ export default function CoachContentPage() {
       setRepetitions(false);
       setExercises([{ name: "", description: "", bodyParts: [], equipment: "", duration: "", sets: "", reps: "", videoUrl: "" }]);
       refetch();
+    }
+  };
+
+  const handleDeletePlan = async (id: string) => {
+    try {
+      await apiFetch(`/api/workouts/${id}`, { method: "DELETE" });
+      refetch();
+    } catch (err) {
+      console.error("Failed to delete plan:", err);
     }
   };
 
@@ -561,7 +594,10 @@ export default function CoachContentPage() {
                     <button className="text-zinc-500 hover:text-zinc-300 transition">
                       <Edit3 className="h-4 w-4" />
                     </button>
-                    <button className="text-zinc-500 hover:text-red-400 transition">
+                    <button
+                      onClick={() => handleDeletePlan(plan.id)}
+                      className="text-zinc-500 hover:text-red-400 transition"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>

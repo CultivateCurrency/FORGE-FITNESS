@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { apiFetch } from "@/hooks/use-api";
+import { useApi, apiFetch } from "@/hooks/use-api";
 import { useUpload } from "@/hooks/use-upload";
 import {
   Card,
@@ -45,8 +45,18 @@ const coachCategories = [
   "Cardio Specialist",
 ];
 
+interface UserProfile {
+  id: string;
+  fullName: string;
+  username: string | null;
+  email: string;
+  profilePhoto: string | null;
+  role: string;
+}
+
 export default function CoachSettingsPage() {
   const { data: session, status } = useSession();
+  const { data: profile, loading: profileLoading } = useApi<UserProfile>("/api/users/me");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Workout Trainer");
@@ -60,12 +70,17 @@ export default function CoachSettingsPage() {
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const { upload, uploading } = useUpload();
 
+  // Populate state from API profile data
   useEffect(() => {
-    if (session?.user) {
+    if (profile) {
+      setFullName(profile.fullName || "");
+      setEmail(profile.email || "");
+      setProfilePhoto(profile.profilePhoto || null);
+    } else if (session?.user) {
       setFullName(session.user.name || "");
       setEmail(session.user.email || "");
     }
-  }, [session]);
+  }, [profile, session]);
 
   const getInitials = (name: string) => {
     if (!name) return "?";
@@ -99,12 +114,18 @@ export default function CoachSettingsPage() {
   };
 
   const handleSaveChanges = async () => {
-    if (!session?.user?.id) return;
+    const userId = profile?.id || (session?.user as any)?.id;
+    if (!userId) return;
     setSaving(true);
     try {
-      await apiFetch(`/api/users/${(session.user as any).id}`, {
+      await apiFetch(`/api/users/${userId}`, {
         method: "PUT",
-        body: JSON.stringify({ fullName, email }),
+        body: JSON.stringify({
+          fullName,
+          email,
+          profilePhoto,
+          coachCategory: selectedCategory,
+        }),
       });
     } catch (err) {
       console.error("Failed to save profile:", err);
@@ -113,7 +134,7 @@ export default function CoachSettingsPage() {
     }
   };
 
-  if (status === "loading") {
+  if (status === "loading" || profileLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />

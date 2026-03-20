@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "next-auth/react";
-import { useApi, useMutation } from "@/hooks/use-api";
+import { useApi, useMutation, apiFetch } from "@/hooks/use-api";
 import {
   Card,
   CardContent,
@@ -25,6 +25,7 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 
 const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -161,6 +162,15 @@ export default function CoachSchedulePage() {
       setEventLocation("Virtual");
       setShowCreateEvent(false);
       refetch();
+    }
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    try {
+      await apiFetch(`/api/events/${id}`, { method: "DELETE" });
+      refetch();
+    } catch (err) {
+      console.error("Failed to delete event:", err);
     }
   };
 
@@ -409,9 +419,18 @@ export default function CoachSchedulePage() {
                       <h4 className="font-medium text-white">{event.title}</h4>
                       <p className="text-xs text-zinc-400 mt-0.5">{formatEventType(event.type)}</p>
                     </div>
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                      {event._count.bookings}/{event.capacity ?? "--"} booked
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                        {event._count.bookings}/{event.capacity ?? "--"} booked
+                      </Badge>
+                      <button
+                        onClick={() => handleDeleteEvent(event.id)}
+                        className="p-1 text-zinc-500 hover:text-red-400 transition"
+                        title="Delete event"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-4 mt-3 text-xs text-zinc-500">
                     <span className="flex items-center gap-1">

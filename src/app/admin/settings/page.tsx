@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -28,7 +28,25 @@ import {
   ExternalLink,
   CheckCircle2,
   Crown,
+  Loader2,
+  Save,
 } from "lucide-react";
+import { useApi, apiFetch } from "@/hooks/use-api";
+
+interface TenantSettings {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  primaryColor: string;
+  accentColor: string;
+  favicon: string | null;
+  customDomain: string | null;
+  features: string[];
+  settings: Record<string, unknown>;
+  plan: string;
+  status: string;
+}
 
 const roles = [
   { name: "Admin", description: "Full platform access", users: 2, color: "text-purple-400", bg: "bg-purple-500/20" },
@@ -44,9 +62,45 @@ const announcements = [
 ];
 
 export default function AdminSettingsPage() {
-  const [gymName, setGymName] = useState("Gymtality");
+  const { data: tenant, loading, error, refetch } = useApi<TenantSettings>("/api/admin/settings");
+  const [gymName, setGymName] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#f97316");
+  const [accentColor, setAccentColor] = useState("#1A1A2E");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // Populate form when tenant data loads
+  useEffect(() => {
+    if (tenant) {
+      setGymName(tenant.name);
+      setPrimaryColor(tenant.primaryColor);
+      setAccentColor(tenant.accentColor);
+    }
+  }, [tenant]);
+
+  async function handleSaveSettings() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await apiFetch("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          name: gymName,
+          primaryColor,
+          accentColor,
+        }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      refetch();
+    } catch (e: any) {
+      setSaveError(e.message || "Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -69,69 +123,168 @@ export default function AdminSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Logo */}
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-              <span className="text-2xl font-bold text-orange-500">G</span>
+          {loading ? (
+            <div className="flex items-center gap-3 text-zinc-400 py-8 justify-center">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Loading settings...</span>
             </div>
-            <div>
-              <p className="text-sm text-zinc-300">Platform Logo</p>
-              <p className="text-xs text-zinc-500">PNG or SVG, 256x256px recommended.</p>
+          ) : error ? (
+            <div className="text-center py-8">
+              <p className="text-red-400 mb-3">{error}</p>
               <Button
                 variant="outline"
-                size="sm"
-                className="mt-2 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                onClick={refetch}
+                className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
               >
-                <Upload className="h-3 w-3 mr-2" />
-                Upload Logo
+                Retry
               </Button>
             </div>
-          </div>
-
-          {/* Platform Name */}
-          <div className="space-y-1.5">
-            <label className="text-sm text-zinc-300">Platform Name</label>
-            <Input
-              value={gymName}
-              onChange={(e) => setGymName(e.target.value)}
-              className="bg-zinc-800 border-zinc-700 text-white"
-            />
-          </div>
-
-          {/* Brand Colors */}
-          <div className="space-y-1.5">
-            <label className="text-sm text-zinc-300 flex items-center gap-2">
-              <Palette className="h-4 w-4 text-zinc-500" />
-              Primary Brand Color
-            </label>
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-lg border border-zinc-700"
-                style={{ backgroundColor: primaryColor }}
-              />
-              <Input
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
-                className="bg-zinc-800 border-zinc-700 text-white max-w-[200px]"
-              />
-              <div className="flex gap-2">
-                {["#f97316", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444"].map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setPrimaryColor(color)}
-                    className={`w-8 h-8 rounded-lg border-2 transition ${
-                      primaryColor === color ? "border-white" : "border-zinc-700"
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
+          ) : (
+            <>
+              {/* Logo */}
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
+                  {tenant?.logo ? (
+                    <img src={tenant.logo} alt="Logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-2xl font-bold text-orange-500">
+                      {gymName?.charAt(0)?.toUpperCase() || "G"}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm text-zinc-300">Platform Logo</p>
+                  <p className="text-xs text-zinc-500">PNG or SVG, 256x256px recommended.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                  >
+                    <Upload className="h-3 w-3 mr-2" />
+                    Upload Logo
+                  </Button>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-            Save Settings
-          </Button>
+              {/* Platform Name */}
+              <div className="space-y-1.5">
+                <label className="text-sm text-zinc-300">Platform Name</label>
+                <Input
+                  value={gymName}
+                  onChange={(e) => setGymName(e.target.value)}
+                  className="bg-zinc-800 border-zinc-700 text-white"
+                />
+              </div>
+
+              {/* Brand Colors */}
+              <div className="space-y-1.5">
+                <label className="text-sm text-zinc-300 flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-zinc-500" />
+                  Primary Brand Color
+                </label>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-lg border border-zinc-700"
+                    style={{ backgroundColor: primaryColor }}
+                  />
+                  <Input
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="bg-zinc-800 border-zinc-700 text-white max-w-[200px]"
+                  />
+                  <div className="flex gap-2">
+                    {["#f97316", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444"].map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setPrimaryColor(color)}
+                        className={`w-8 h-8 rounded-lg border-2 transition ${
+                          primaryColor === color ? "border-white" : "border-zinc-700"
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Accent Color */}
+              <div className="space-y-1.5">
+                <label className="text-sm text-zinc-300 flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-zinc-500" />
+                  Accent Color
+                </label>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-lg border border-zinc-700"
+                    style={{ backgroundColor: accentColor }}
+                  />
+                  <Input
+                    value={accentColor}
+                    onChange={(e) => setAccentColor(e.target.value)}
+                    className="bg-zinc-800 border-zinc-700 text-white max-w-[200px]"
+                  />
+                </div>
+              </div>
+
+              {/* Tenant info (read-only) */}
+              {tenant && (
+                <div className="grid grid-cols-2 gap-4 p-3 bg-zinc-800/50 rounded-lg">
+                  <div>
+                    <p className="text-xs text-zinc-500">Slug</p>
+                    <p className="text-sm text-zinc-300 font-mono">{tenant.slug}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-zinc-500">Plan</p>
+                    <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
+                      {tenant.plan}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs text-zinc-500">Status</p>
+                    <Badge className={
+                      tenant.status === "ACTIVE" ? "bg-green-500/20 text-green-400 border-green-500/30"
+                        : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                    }>
+                      {tenant.status}
+                    </Badge>
+                  </div>
+                  {tenant.customDomain && (
+                    <div>
+                      <p className="text-xs text-zinc-500">Custom Domain</p>
+                      <p className="text-sm text-zinc-300">{tenant.customDomain}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {saveError && (
+                <p className="text-red-400 text-sm">{saveError}</p>
+              )}
+
+              <Button
+                onClick={handleSaveSettings}
+                disabled={saving}
+                className="bg-orange-500 hover:bg-orange-600 text-white"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : saved ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Saved!
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Settings
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
 

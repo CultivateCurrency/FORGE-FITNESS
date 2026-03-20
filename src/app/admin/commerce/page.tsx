@@ -57,13 +57,26 @@ interface DonationsResponse {
   stats: { totalAmount: number; monthlyAmount: number; totalCount: number };
 }
 
-const sampleOrders = [
-  { id: "ORD-001", customer: "Jordan Hayes", items: 2, total: "$69.98", status: "Delivered", date: "2026-03-15" },
-  { id: "ORD-002", customer: "Sarah Mitchell", items: 1, total: "$49.99", status: "Shipped", date: "2026-03-15" },
-  { id: "ORD-003", customer: "Marcus Johnson", items: 3, total: "$89.97", status: "Processing", date: "2026-03-14" },
-  { id: "ORD-004", customer: "Emily Chen", items: 1, total: "$34.99", status: "Delivered", date: "2026-03-13" },
-  { id: "ORD-005", customer: "David Park", items: 2, total: "$44.98", status: "Cancelled", date: "2026-03-12" },
-];
+interface OrderItem {
+  id: string;
+  quantity: number;
+  price: number;
+  product: { name: string };
+}
+
+interface Order {
+  id: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  user: { id: string; fullName: string; email: string };
+  items: OrderItem[];
+}
+
+interface OrdersResponse {
+  orders: Order[];
+  pagination: { total: number; page: number; limit: number; totalPages: number };
+}
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
@@ -77,10 +90,14 @@ export default function AdminCommercePage() {
   const [activeSection, setActiveSection] = useState<"products" | "orders" | "donations">("products");
 
   const { data, loading, error, refetch: refetchProducts } = useApi<ProductsResponse>("/api/shop/products?limit=50");
+  const { data: ordersData, loading: ordersLoading, error: ordersError } = useApi<OrdersResponse>(
+    activeSection === "orders" ? "/api/admin/orders?limit=50" : null
+  );
   const { data: donationsData, loading: donationsLoading, refetch: refetchDonations } = useApi<DonationsResponse>(
     activeSection === "donations" ? "/api/admin/donations?limit=50" : null
   );
 
+  const orders = ordersData?.orders ?? [];
   const totalRevenue = data?.products.reduce((sum, p) => sum + p.price * p._count.orderItems, 0) ?? 0;
 
   // Product CRUD
@@ -153,8 +170,8 @@ export default function AdminCommercePage() {
                 <Package className="h-6 w-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-2xl font-bold text-white">{sampleOrders.length}</p>
-                <p className="text-sm text-zinc-400">Recent Orders</p>
+                <p className="text-2xl font-bold text-white">{ordersData?.pagination.total ?? 0}</p>
+                <p className="text-sm text-zinc-400">Total Orders</p>
               </div>
             </div>
           </CardContent>
@@ -311,39 +328,61 @@ export default function AdminCommercePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-zinc-800">
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Order ID</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Customer</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Items</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Total</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Status</th>
-                    <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sampleOrders.map(order => (
-                    <tr key={order.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition">
-                      <td className="py-3 px-4 text-sm font-mono text-zinc-400">{order.id}</td>
-                      <td className="py-3 px-4 text-sm text-white">{order.customer}</td>
-                      <td className="py-3 px-4 text-sm text-zinc-300">{order.items}</td>
-                      <td className="py-3 px-4 text-sm font-medium text-green-400">{order.total}</td>
-                      <td className="py-3 px-4">
-                        <Badge className={
-                          order.status === "Delivered" ? "bg-green-500/20 text-green-400"
-                            : order.status === "Shipped" ? "bg-blue-500/20 text-blue-400"
-                            : order.status === "Cancelled" ? "bg-red-500/20 text-red-400"
-                            : "bg-amber-500/20 text-amber-400"
-                        }>{order.status}</Badge>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-zinc-400">{order.date}</td>
+            {ordersLoading && (
+              <div className="flex items-center justify-center py-12 gap-3 text-zinc-400">
+                <Loader2 className="h-5 w-5 animate-spin" /><span>Loading orders...</span>
+              </div>
+            )}
+            {ordersError && (
+              <div className="flex items-center justify-center py-12 text-red-400">Failed to load orders.</div>
+            )}
+            {!ordersLoading && !ordersError && (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-zinc-800">
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Order ID</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Customer</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Items</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Total</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Status</th>
+                      <th className="text-left py-3 px-4 text-xs font-medium text-zinc-500 uppercase">Date</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {orders.map(order => {
+                      const statusLabel = order.status.charAt(0) + order.status.slice(1).toLowerCase();
+                      return (
+                        <tr key={order.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition">
+                          <td className="py-3 px-4 text-sm font-mono text-zinc-400">{order.id.slice(0, 12)}</td>
+                          <td className="py-3 px-4">
+                            <div>
+                              <p className="text-sm text-white">{order.user.fullName}</p>
+                              <p className="text-xs text-zinc-500">{order.user.email}</p>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-zinc-300">{order.items.length}</td>
+                          <td className="py-3 px-4 text-sm font-medium text-green-400">{formatCurrency(order.total)}</td>
+                          <td className="py-3 px-4">
+                            <Badge className={
+                              order.status === "DELIVERED" ? "bg-green-500/20 text-green-400"
+                                : order.status === "SHIPPED" ? "bg-blue-500/20 text-blue-400"
+                                : order.status === "CANCELLED" || order.status === "REFUNDED" ? "bg-red-500/20 text-red-400"
+                                : order.status === "PAID" ? "bg-emerald-500/20 text-emerald-400"
+                                : "bg-amber-500/20 text-amber-400"
+                            }>{statusLabel}</Badge>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-zinc-400">{formatDate(order.createdAt)}</td>
+                        </tr>
+                      );
+                    })}
+                    {orders.length === 0 && (
+                      <tr><td colSpan={6} className="py-12 text-center text-zinc-500">No orders found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

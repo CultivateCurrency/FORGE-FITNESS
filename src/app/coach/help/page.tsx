@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { apiFetch } from "@/hooks/use-api";
 import {
   Card,
   CardContent,
@@ -72,23 +73,30 @@ export default function CoachHelpPage() {
   const [sent, setSent] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-  useState(() => {
+  useEffect(() => {
     if (session?.user) {
       setName(session.user.name || "");
       setEmail(session.user.email || "");
     }
-  });
+  }, [session]);
 
   const handleSubmit = async () => {
     if (!subject.trim() || !message.trim()) return;
     setSending(true);
-    // Simulate sending — will integrate with support API / SES later
-    await new Promise((r) => setTimeout(r, 1500));
-    setSending(false);
-    setSent(true);
-    setSubject("");
-    setMessage("");
-    setTimeout(() => setSent(false), 4000);
+    try {
+      await apiFetch("/api/help", {
+        method: "POST",
+        body: JSON.stringify({ name, email, subject, message }),
+      });
+      setSent(true);
+      setSubject("");
+      setMessage("");
+      setTimeout(() => setSent(false), 4000);
+    } catch (err) {
+      console.error("Failed to send support request:", err);
+    } finally {
+      setSending(false);
+    }
   };
 
   if (status === "loading") {
