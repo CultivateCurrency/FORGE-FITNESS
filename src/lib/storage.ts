@@ -11,17 +11,22 @@ const OCI_REGION = process.env.OCI_REGION || "us-ashburn-1";
 const OCI_ACCESS_KEY = process.env.OCI_ACCESS_KEY || "";
 const OCI_SECRET_KEY = process.env.OCI_SECRET_KEY || "";
 
-const endpoint = `https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com`;
-
-const s3Client = new S3Client({
-  region: OCI_REGION,
-  endpoint,
-  forcePathStyle: true,
-  credentials: {
-    accessKeyId: OCI_ACCESS_KEY,
-    secretAccessKey: OCI_SECRET_KEY,
-  },
-});
+let _s3Client: S3Client | null = null;
+function getS3Client(): S3Client {
+  if (!_s3Client) {
+    const endpoint = `https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com`;
+    _s3Client = new S3Client({
+      region: OCI_REGION,
+      endpoint,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: OCI_ACCESS_KEY,
+        secretAccessKey: OCI_SECRET_KEY,
+      },
+    });
+  }
+  return _s3Client;
+}
 
 // ─── Upload file ──────────────────────────────────────────────────────────
 
@@ -30,7 +35,7 @@ export async function uploadFile(
   key: string,
   contentType: string
 ): Promise<string> {
-  await s3Client.send(
+  await getS3Client().send(
     new PutObjectCommand({
       Bucket: OCI_BUCKET,
       Key: key,
@@ -47,7 +52,7 @@ export async function uploadFile(
 // ─── Delete file ──────────────────────────────────────────────────────────
 
 export async function deleteFile(key: string): Promise<void> {
-  await s3Client.send(
+  await getS3Client().send(
     new DeleteObjectCommand({
       Bucket: OCI_BUCKET,
       Key: key,

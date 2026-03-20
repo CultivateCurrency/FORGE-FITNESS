@@ -11,13 +11,19 @@ import {
 
 // ─── IVS Client ──────────────────────────────────────────────────────────────
 
-const ivsClient = new IvsClient({
-  region: process.env.AWS_IVS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_IVS_ACCESS_KEY || "",
-    secretAccessKey: process.env.AWS_IVS_SECRET_KEY || "",
-  },
-});
+let _ivsClient: IvsClient | null = null;
+function getIvsClient(): IvsClient {
+  if (!_ivsClient) {
+    _ivsClient = new IvsClient({
+      region: process.env.AWS_IVS_REGION || "us-east-1",
+      credentials: {
+        accessKeyId: process.env.AWS_IVS_ACCESS_KEY || "",
+        secretAccessKey: process.env.AWS_IVS_SECRET_KEY || "",
+      },
+    });
+  }
+  return _ivsClient;
+}
 
 // ─── Create Channel ──────────────────────────────────────────────────────────
 // Creates an IVS channel for a stream. Returns channel info + stream key.
@@ -31,7 +37,7 @@ export async function createIvsChannel(name: string) {
     insecureIngest: false,
   });
 
-  const response = await ivsClient.send(command);
+  const response = await getIvsClient().send(command);
 
   return {
     channelArn: response.channel?.arn || "",
@@ -46,7 +52,7 @@ export async function createIvsChannel(name: string) {
 
 export async function deleteIvsChannel(channelArn: string) {
   const command = new DeleteChannelCommand({ arn: channelArn });
-  await ivsClient.send(command);
+  await getIvsClient().send(command);
 }
 
 // ─── Get Stream Info ─────────────────────────────────────────────────────────
@@ -55,7 +61,7 @@ export async function deleteIvsChannel(channelArn: string) {
 export async function getIvsStream(channelArn: string) {
   try {
     const command = new GetStreamCommand({ channelArn });
-    const response = await ivsClient.send(command);
+    const response = await getIvsClient().send(command);
     return {
       state: response.stream?.state, // LIVE | OFFLINE
       health: response.stream?.health, // HEALTHY | STARVING | UNKNOWN
@@ -76,7 +82,7 @@ export async function getIvsStream(channelArn: string) {
 
 export async function stopIvsStream(channelArn: string) {
   const command = new StopStreamCommand({ channelArn });
-  await ivsClient.send(command);
+  await getIvsClient().send(command);
 }
 
 // ─── Get Channel ─────────────────────────────────────────────────────────────
@@ -84,7 +90,7 @@ export async function stopIvsStream(channelArn: string) {
 
 export async function getIvsChannel(channelArn: string) {
   const command = new GetChannelCommand({ arn: channelArn });
-  const response = await ivsClient.send(command);
+  const response = await getIvsClient().send(command);
   return {
     arn: response.channel?.arn || "",
     ingestEndpoint: response.channel?.ingestEndpoint || "",

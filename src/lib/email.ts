@@ -1,6 +1,11 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder");
+let _resend: Resend | null = null;
+function getResend(): Resend | null {
+  if (!process.env.RESEND_API_KEY) return null;
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 const FROM_EMAIL =
   process.env.RESEND_FROM_EMAIL || "Forge Fitness <onboarding@resend.dev>";
@@ -68,6 +73,12 @@ function buttonBlock(label: string, url: string): string {
 // ─── Helper to send emails ─────────────────────────────────────────────────
 
 async function send(to: string, subject: string, html: string) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn("Resend API key not configured — skipping email to", to);
+    return { success: false, error: "Email service not configured" };
+  }
+
   try {
     const { data, error } = await resend.emails.send({
       from: FROM_EMAIL,
