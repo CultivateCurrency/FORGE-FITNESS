@@ -18,8 +18,10 @@ export default function VerifyPage() {
   const { pendingEmail } = useAuthStore();
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [resendMsg, setResendMsg] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -154,10 +156,42 @@ export default function VerifyPage() {
 
           <p className="text-sm text-zinc-400 text-center">
             Didn&apos;t receive the code?{" "}
-            <button type="button" className="text-orange-500 hover:underline">
-              Resend OTP
+            <button
+              type="button"
+              disabled={isResending}
+              className="text-orange-500 hover:underline disabled:opacity-50"
+              onClick={async () => {
+                if (!pendingEmail) return;
+                setIsResending(true);
+                setResendMsg("");
+                setError("");
+                try {
+                  const res = await fetch("/api/auth/resend-otp", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: pendingEmail }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setResendMsg("A new code has been sent to your email.");
+                  } else {
+                    setError(data.error || "Failed to resend code");
+                  }
+                } catch {
+                  setError("Failed to resend code. Please try again.");
+                } finally {
+                  setIsResending(false);
+                }
+              }}
+            >
+              {isResending ? "Sending..." : "Resend OTP"}
             </button>
           </p>
+          {resendMsg && (
+            <div className="p-3 rounded-md bg-green-500/10 border border-green-500/20 text-green-400 text-sm text-center">
+              {resendMsg}
+            </div>
+          )}
         </CardContent>
       </form>
     </Card>
