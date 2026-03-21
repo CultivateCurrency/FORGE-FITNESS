@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useApi } from '@/hooks/use-api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/rich-text-editor'
 import { Badge } from '@/components/ui/badge'
 import { FileText, CheckCircle2, Loader2, Save } from 'lucide-react'
 
@@ -113,15 +113,12 @@ export default function AdminCMSPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Textarea
-                    className="bg-gray-700 border-gray-600 text-white min-h-48 font-mono text-sm leading-relaxed"
-                    placeholder={`Enter ${label} content here...`}
+                  <RichTextEditor
                     value={contents[key] || ''}
-                    onChange={e => setContents(prev => ({ ...prev, [key]: e.target.value }))}
+                    onChange={(html) => setContents(prev => ({ ...prev, [key]: html }))}
+                    placeholder={`Enter ${label} content here...`}
+                    minHeight="200px"
                   />
-                  <p className="text-gray-500 text-xs mt-2">
-                    Tip: You can use Markdown formatting (# headings, **bold**, *italic*, - lists)
-                  </p>
                 </CardContent>
               </Card>
             )

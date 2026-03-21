@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
   Dumbbell,
@@ -133,7 +134,10 @@ export function Sidebar({ variant }: SidebarProps) {
 
       {/* Logout */}
       <div className="p-4 border-t border-zinc-800">
-        <button className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-zinc-800/50 w-full transition-colors">
+        <button
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-zinc-800/50 w-full transition-colors"
+        >
           <LogOut size={18} />
           Log Out
         </button>

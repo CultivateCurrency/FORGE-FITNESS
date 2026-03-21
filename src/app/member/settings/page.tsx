@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -34,9 +34,12 @@ import {
   Star,
   CheckCircle2,
   X,
+  Ban,
+  Trash2,
 } from "lucide-react";
 import { useApi, apiFetch } from "@/hooks/use-api";
 import { useUpload } from "@/hooks/use-upload";
+import { signOut } from "next-auth/react";
 
 interface SubscriptionData {
   id: string;
@@ -123,6 +126,8 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const { upload, uploading } = useUpload();
+  const [blockedUsers, setBlockedUsers] = useState<{ id: string; fullName: string; username: string }[]>([]);
+  const [unblocking, setUnblocking] = useState<string | null>(null);
 
   const { data: userData } = useApi<UserProfile>("/api/users/me");
   const { data: subData } = useApi<SubscriptionData>("/api/admin/subscriptions?mySubscription=true");
@@ -136,6 +141,24 @@ function SettingsContent() {
       setProfilePhoto(userData.profilePhoto || null);
     }
   }, [userData]);
+
+  // Load blocked users
+  useEffect(() => {
+    fetch("/api/users/me/blocked")
+      .then((r) => r.json())
+      .then((d) => { if (d.success) setBlockedUsers(d.data || []); })
+      .catch(() => {});
+  }, []);
+
+  const handleUnblock = async (blockedId: string) => {
+    setUnblocking(blockedId);
+    try {
+      await apiFetch(`/api/users/${blockedId}/block`, { method: "DELETE" });
+      setBlockedUsers((prev) => prev.filter((u) => u.id !== blockedId));
+    } catch { /* ignore */ } finally {
+      setUnblocking(null);
+    }
+  };
 
   // Check for success redirect from Stripe
   useEffect(() => {
@@ -513,10 +536,53 @@ function SettingsContent() {
         </CardContent>
       </Card>
 
+      {/* Blocked Accounts */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Ban className="h-5 w-5 text-red-400" />
+            Blocked Accounts
+          </CardTitle>
+          <CardDescription className="text-zinc-400">
+            Users you have blocked will not be able to message you or see your activity.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {blockedUsers.length === 0 ? (
+            <p className="text-sm text-zinc-500 text-center py-4">No blocked accounts</p>
+          ) : (
+            <div className="space-y-3">
+              {blockedUsers.map((user) => (
+                <div key={user.id} className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">{user.fullName}</p>
+                    <p className="text-xs text-zinc-400">@{user.username}</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                    disabled={unblocking === user.id}
+                    onClick={() => handleUnblock(user.id)}
+                  >
+                    {unblocking === user.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      "Unblock"
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Logout */}
       <Button
         variant="outline"
         className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+        onClick={() => signOut({ callbackUrl: "/login" })}
       >
         <LogOut className="h-4 w-4 mr-2" />
         Logout
